@@ -1,4 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3';
+import { z } from 'https://deno.land/x/zod@v3.22.4/mod.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -11,6 +12,29 @@ interface ScrapeRequest {
   platform: string;
 }
 
+// Validation schema for scrape requests
+const ScrapeRequestSchema = z.object({
+  productId: z.string().uuid({ message: 'Invalid product ID format' }),
+  url: z.string()
+    .url({ message: 'Invalid URL format' })
+    .max(2048, { message: 'URL too long' })
+    .refine(url => {
+      try {
+        const domain = new URL(url).hostname.toLowerCase();
+        return domain.includes('amazon.') || 
+               domain.includes('flipkart.') || 
+               domain.includes('myntra.') || 
+               domain.includes('ajio.') || 
+               domain.includes('snapdeal.');
+      } catch {
+        return false;
+      }
+    }, { message: 'Unsupported domain' }),
+  platform: z.enum(['Amazon', 'Flipkart', 'Myntra', 'Ajio', 'Snapdeal'], {
+    errorMap: () => ({ message: 'Platform must be one of: Amazon, Flipkart, Myntra, Ajio, Snapdeal' })
+  })
+});
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -22,7 +46,21 @@ Deno.serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
     );
 
-    const { productId, url, platform }: ScrapeRequest = await req.json();
+    const requestBody = await req.json();
+    
+    // Validate input
+    const parseResult = ScrapeRequestSchema.safeParse(requestBody);
+    if (!parseResult.success) {
+      return new Response(JSON.stringify({ 
+        error: 'Invalid request', 
+        details: parseResult.error.issues 
+      }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+    
+    const { productId, url, platform } = parseResult.data;
 
     console.log(`Starting scrape for product ${productId} on ${platform}`);
 

@@ -1,4 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3';
+import { z } from 'https://deno.land/x/zod@v3.22.4/mod.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -9,6 +10,29 @@ interface CreateTrackerRequest {
   productUrl: string;
   targetPrice?: number;
 }
+
+// Validation schema for creating trackers
+const CreateTrackerSchema = z.object({
+  productUrl: z.string()
+    .url({ message: 'Invalid URL format' })
+    .max(2048, { message: 'URL too long' })
+    .refine(url => {
+      try {
+        const domain = new URL(url).hostname.toLowerCase();
+        return domain.includes('amazon.') || 
+               domain.includes('flipkart.') || 
+               domain.includes('myntra.') || 
+               domain.includes('ajio.') || 
+               domain.includes('snapdeal.');
+      } catch {
+        return false;
+      }
+    }, { message: 'Unsupported platform. Only Amazon, Flipkart, Myntra, Ajio, and Snapdeal are supported.' }),
+  targetPrice: z.number()
+    .positive({ message: 'Price must be positive' })
+    .max(10000000, { message: 'Price exceeds maximum allowed value' })
+    .optional()
+});
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -73,7 +97,21 @@ Deno.serve(async (req) => {
 
     // POST - Create a new tracker
     if (req.method === 'POST') {
-      const { productUrl, targetPrice }: CreateTrackerRequest = await req.json();
+      const requestBody = await req.json();
+      
+      // Validate input
+      const parseResult = CreateTrackerSchema.safeParse(requestBody);
+      if (!parseResult.success) {
+        return new Response(JSON.stringify({ 
+          error: 'Validation failed', 
+          details: parseResult.error.issues 
+        }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      
+      const { productUrl, targetPrice } = parseResult.data;
 
       console.log('Creating tracker for URL:', productUrl);
 
