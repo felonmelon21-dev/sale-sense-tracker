@@ -14,7 +14,209 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      alerts: {
+        Row: {
+          id: string
+          new_price: number
+          old_price: number | null
+          status: string | null
+          tracker_id: string
+          triggered_at: string
+          user_id: string
+        }
+        Insert: {
+          id?: string
+          new_price: number
+          old_price?: number | null
+          status?: string | null
+          tracker_id: string
+          triggered_at?: string
+          user_id: string
+        }
+        Update: {
+          id?: string
+          new_price?: number
+          old_price?: number | null
+          status?: string | null
+          tracker_id?: string
+          triggered_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "alerts_tracker_id_fkey"
+            columns: ["tracker_id"]
+            isOneToOne: false
+            referencedRelation: "trackers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      price_snapshots: {
+        Row: {
+          currency: string | null
+          id: string
+          is_available: boolean | null
+          price: number
+          product_id: string
+          snapshot_at: string
+        }
+        Insert: {
+          currency?: string | null
+          id?: string
+          is_available?: boolean | null
+          price: number
+          product_id: string
+          snapshot_at?: string
+        }
+        Update: {
+          currency?: string | null
+          id?: string
+          is_available?: boolean | null
+          price?: number
+          product_id?: string
+          snapshot_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "price_snapshots_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      products: {
+        Row: {
+          created_at: string
+          currency: string | null
+          id: string
+          image_url: string | null
+          is_available: boolean | null
+          latest_price: number | null
+          name: string
+          platform: string
+          updated_at: string
+          url: string
+        }
+        Insert: {
+          created_at?: string
+          currency?: string | null
+          id?: string
+          image_url?: string | null
+          is_available?: boolean | null
+          latest_price?: number | null
+          name: string
+          platform: string
+          updated_at?: string
+          url: string
+        }
+        Update: {
+          created_at?: string
+          currency?: string | null
+          id?: string
+          image_url?: string | null
+          is_available?: boolean | null
+          latest_price?: number | null
+          name?: string
+          platform?: string
+          updated_at?: string
+          url?: string
+        }
+        Relationships: []
+      }
+      profiles: {
+        Row: {
+          created_at: string
+          email: string
+          id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          email: string
+          id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          email?: string
+          id?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      scrape_logs: {
+        Row: {
+          error_message: string | null
+          id: string
+          product_id: string | null
+          scraped_at: string
+          status: string
+        }
+        Insert: {
+          error_message?: string | null
+          id?: string
+          product_id?: string | null
+          scraped_at?: string
+          status: string
+        }
+        Update: {
+          error_message?: string | null
+          id?: string
+          product_id?: string | null
+          scraped_at?: string
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "scrape_logs_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      trackers: {
+        Row: {
+          created_at: string
+          id: string
+          is_active: boolean | null
+          product_id: string
+          target_price: number | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_active?: boolean | null
+          product_id: string
+          target_price?: number | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_active?: boolean | null
+          product_id?: string
+          target_price?: number | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "trackers_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
