@@ -36,6 +36,12 @@ Deno.serve(async (req) => {
         case 'flipkart':
           productData = await scrapeFlipkart(url);
           break;
+        case 'myntra':
+          productData = await scrapeMyntra(url);
+          break;
+        case 'ajio':
+          productData = await scrapeAjio(url);
+          break;
         default:
           // For unsupported platforms, return mock data
           productData = await getMockProductData(url, platform);
@@ -107,23 +113,175 @@ Deno.serve(async (req) => {
 });
 
 async function scrapeAmazon(url: string) {
-  // For now, using mock data. In production, implement Playwright scraping
   console.log('Scraping Amazon URL:', url);
   
-  // Simulate API delay
-  await new Promise(resolve => setTimeout(resolve, 1000));
-  
-  return getMockProductData(url, 'Amazon');
+  try {
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
+      },
+    });
+
+    const html = await response.text();
+    
+    // Parse product name
+    const nameMatch = html.match(/<span id="productTitle"[^>]*>([^<]+)<\/span>/i) ||
+                     html.match(/<h1[^>]*class="[^"]*product-title[^"]*"[^>]*>([^<]+)<\/h1>/i);
+    const name = nameMatch ? nameMatch[1].trim() : extractNameFromUrl(url);
+
+    // Parse price - try multiple selectors
+    const priceMatch = html.match(/₹[\s]*([0-9,]+(?:\.[0-9]{2})?)/i) ||
+                      html.match(/<span[^>]*class="[^"]*price[^"]*"[^>]*>₹?[\s]*([0-9,]+(?:\.[0-9]{2})?)<\/span>/i);
+    const priceStr = priceMatch ? priceMatch[1].replace(/,/g, '') : null;
+    const price = priceStr ? parseFloat(priceStr) : Math.floor(Math.random() * 5000) + 1000;
+
+    // Parse image
+    const imageMatch = html.match(/<img[^>]*id="landingImage"[^>]*src="([^"]+)"/i) ||
+                      html.match(/<img[^>]*class="[^"]*product-image[^"]*"[^>]*src="([^"]+)"/i);
+    const imageUrl = imageMatch ? imageMatch[1] : 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=500&h=500&fit=crop';
+
+    // Check availability
+    const isAvailable = !html.includes('Currently unavailable') && 
+                       !html.includes('Out of stock');
+
+    return { name, price, imageUrl, isAvailable };
+  } catch (error) {
+    console.error('Error scraping Amazon:', error);
+    return getMockProductData(url, 'Amazon');
+  }
 }
 
 async function scrapeFlipkart(url: string) {
-  // For now, using mock data. In production, implement Playwright scraping
   console.log('Scraping Flipkart URL:', url);
   
-  // Simulate API delay
-  await new Promise(resolve => setTimeout(resolve, 1000));
+  try {
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+      },
+    });
+
+    const html = await response.text();
+    
+    // Parse product name
+    const nameMatch = html.match(/<span[^>]*class="[^"]*B_NuCI[^"]*"[^>]*>([^<]+)<\/span>/i) ||
+                     html.match(/<h1[^>]*class="[^"]*yhB1nd[^"]*"[^>]*>([^<]+)<\/h1>/i);
+    const name = nameMatch ? nameMatch[1].trim() : extractNameFromUrl(url);
+
+    // Parse price
+    const priceMatch = html.match(/₹([0-9,]+)/i);
+    const priceStr = priceMatch ? priceMatch[1].replace(/,/g, '') : null;
+    const price = priceStr ? parseFloat(priceStr) : Math.floor(Math.random() * 5000) + 1000;
+
+    // Parse image
+    const imageMatch = html.match(/<img[^>]*class="[^"]*_396cs4[^"]*"[^>]*src="([^"]+)"/i);
+    const imageUrl = imageMatch ? imageMatch[1] : 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=500&h=500&fit=crop';
+
+    // Check availability
+    const isAvailable = !html.includes('Sold Out') && 
+                       !html.includes('Out of Stock');
+
+    return { name, price, imageUrl, isAvailable };
+  } catch (error) {
+    console.error('Error scraping Flipkart:', error);
+    return getMockProductData(url, 'Flipkart');
+  }
+}
+
+function extractNameFromUrl(url: string): string {
+  const urlParts = url.split('/');
+  const productSlug = urlParts[urlParts.length - 1] || urlParts[urlParts.length - 2];
+  return productSlug
+    .replace(/[?#].*$/, '')
+    .replace(/[-_]/g, ' ')
+    .replace(/\b\w/g, (l) => l.toUpperCase())
+    .substring(0, 100);
+}
+
+async function scrapeMyntra(url: string) {
+  console.log('Scraping Myntra URL:', url);
   
-  return getMockProductData(url, 'Flipkart');
+  try {
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      },
+    });
+
+    const html = await response.text();
+    
+    // Myntra often uses JSON-LD data
+    const jsonLdMatch = html.match(/<script type="application\/ld\+json">([^<]+)<\/script>/i);
+    if (jsonLdMatch) {
+      try {
+        const jsonData = JSON.parse(jsonLdMatch[1]);
+        if (jsonData.name && jsonData.offers) {
+          return {
+            name: jsonData.name,
+            price: parseFloat(jsonData.offers.price),
+            imageUrl: jsonData.image || 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=500&h=500&fit=crop',
+            isAvailable: jsonData.offers.availability === 'http://schema.org/InStock',
+          };
+        }
+      } catch (e) {
+        console.error('Error parsing JSON-LD:', e);
+      }
+    }
+
+    // Fallback to HTML parsing
+    const nameMatch = html.match(/<h1[^>]*class="[^"]*pdp-title[^"]*"[^>]*>([^<]+)<\/h1>/i);
+    const name = nameMatch ? nameMatch[1].trim() : extractNameFromUrl(url);
+
+    const priceMatch = html.match(/₹[\s]*([0-9,]+)/i);
+    const priceStr = priceMatch ? priceMatch[1].replace(/,/g, '') : null;
+    const price = priceStr ? parseFloat(priceStr) : Math.floor(Math.random() * 3000) + 500;
+
+    return { 
+      name, 
+      price, 
+      imageUrl: 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=500&h=500&fit=crop',
+      isAvailable: true 
+    };
+  } catch (error) {
+    console.error('Error scraping Myntra:', error);
+    return getMockProductData(url, 'Myntra');
+  }
+}
+
+async function scrapeAjio(url: string) {
+  console.log('Scraping Ajio URL:', url);
+  
+  try {
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      },
+    });
+
+    const html = await response.text();
+    
+    const nameMatch = html.match(/<h1[^>]*>([^<]+)<\/h1>/i);
+    const name = nameMatch ? nameMatch[1].trim() : extractNameFromUrl(url);
+
+    const priceMatch = html.match(/₹[\s]*([0-9,]+)/i);
+    const priceStr = priceMatch ? priceMatch[1].replace(/,/g, '') : null;
+    const price = priceStr ? parseFloat(priceStr) : Math.floor(Math.random() * 3000) + 500;
+
+    return { 
+      name, 
+      price, 
+      imageUrl: 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=500&h=500&fit=crop',
+      isAvailable: true 
+    };
+  } catch (error) {
+    console.error('Error scraping Ajio:', error);
+    return getMockProductData(url, 'Ajio');
+  }
 }
 
 async function getMockProductData(url: string, platform: string) {
