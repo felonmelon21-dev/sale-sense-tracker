@@ -1,1 +1,13 @@
 project_id = "vtbxyjroscevdsqihikn"
+
+[functions.trackers]
+verify_jwt = true
+
+[functions.products]
+verify_jwt = true
+
+[functions.scraper]
+verify_jwt = false
+
+[functions.admin]
+verify_jwt = false

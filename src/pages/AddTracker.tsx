@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -6,24 +6,45 @@ import { Label } from "@/components/ui/label";
 import { TrendingDown, ArrowLeft, Link as LinkIcon, Search } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
+import { useAuth } from "@/hooks/useAuth";
+import { useTrackers } from "@/hooks/useTrackers";
 
 const AddTracker = () => {
   const navigate = useNavigate();
+  const { user, loading: authLoading } = useAuth();
+  const { createTracker, isCreating } = useTrackers();
   const [productUrl, setProductUrl] = useState("");
   const [targetPrice, setTargetPrice] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    if (!authLoading && !user) {
+      navigate("/auth");
+    }
+  }, [user, authLoading, navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsLoading(true);
 
-    // Simulate API call
-    setTimeout(() => {
-      toast.success("Product tracker added successfully!");
-      setIsLoading(false);
-      navigate("/dashboard");
-    }, 1500);
+    createTracker(
+      {
+        productUrl,
+        targetPrice: targetPrice ? parseFloat(targetPrice) : undefined,
+      },
+      {
+        onSuccess: () => {
+          navigate("/dashboard");
+        },
+      }
+    );
   };
+
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+      </div>
+    );
+  }
 
   const supportedPlatforms = [
     { name: "Amazon", domain: "amazon.in" },
@@ -111,9 +132,9 @@ const AddTracker = () => {
                 <Button 
                   type="submit" 
                   className="w-full bg-primary hover:bg-primary/90"
-                  disabled={isLoading}
+                  disabled={isCreating}
                 >
-                  {isLoading ? (
+                  {isCreating ? (
                     "Adding Tracker..."
                   ) : (
                     <>
