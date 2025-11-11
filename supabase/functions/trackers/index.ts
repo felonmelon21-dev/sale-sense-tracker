@@ -16,23 +16,37 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const supabaseClient = createClient(
+    // Create Supabase client with service role for database operations
+    const supabaseAdmin = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
-      { global: { headers: { Authorization: req.headers.get('Authorization')! } } }
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
     );
 
-    const { data: { user }, error: authError } = await supabaseClient.auth.getUser();
+    // Verify user JWT
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader) {
+      return new Response(JSON.stringify({ error: 'Missing authorization header' }), {
+        status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    const token = authHeader.replace('Bearer ', '');
+    const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
+    
     if (authError || !user) {
+      console.error('Auth error:', authError);
       return new Response(JSON.stringify({ error: 'Unauthorized' }), {
         status: 401,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
+    console.log('Authenticated user:', user.id);
+
     // GET - List all trackers for the user
     if (req.method === 'GET') {
-      const { data: trackers, error } = await supabaseClient
+      const { data: trackers, error } = await supabaseAdmin
         .from('trackers')
         .select(`
           *,
@@ -73,7 +87,7 @@ Deno.serve(async (req) => {
       }
 
       // Check if product already exists
-      const { data: existingProduct } = await supabaseClient
+      const { data: existingProduct } = await supabaseAdmin
         .from('products')
         .select('*')
         .eq('url', productUrl)
@@ -86,7 +100,7 @@ Deno.serve(async (req) => {
         console.log('Product already exists:', productId);
       } else {
         // Create new product (scraping will happen in background)
-        const { data: newProduct, error: productError } = await supabaseClient
+        const { data: newProduct, error: productError } = await supabaseAdmin
           .from('products')
           .insert({
             name: 'Product loading...',
@@ -102,13 +116,13 @@ Deno.serve(async (req) => {
         console.log('Created new product:', productId);
 
         // Trigger scraping in background (fire and forget)
-        supabaseClient.functions.invoke('scraper', {
+        supabaseAdmin.functions.invoke('scraper', {
           body: { productId, url: productUrl, platform },
         }).catch((err) => console.error('Background scraping error:', err));
       }
 
       // Check if tracker already exists
-      const { data: existingTracker } = await supabaseClient
+      const { data: existingTracker } = await supabaseAdmin
         .from('trackers')
         .select('*')
         .eq('user_id', user.id)
@@ -123,7 +137,7 @@ Deno.serve(async (req) => {
       }
 
       // Create tracker
-      const { data: tracker, error: trackerError } = await supabaseClient
+      const { data: tracker, error: trackerError } = await supabaseAdmin
         .from('trackers')
         .insert({
           user_id: user.id,
@@ -156,7 +170,7 @@ Deno.serve(async (req) => {
         });
       }
 
-      const { error } = await supabaseClient
+      const { error } = await supabaseAdmin
         .from('trackers')
         .delete()
         .eq('id', trackerId)

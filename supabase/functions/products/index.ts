@@ -11,13 +11,24 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const supabaseClient = createClient(
+    // Create Supabase client with service role
+    const supabaseAdmin = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
-      { global: { headers: { Authorization: req.headers.get('Authorization')! } } }
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
     );
 
-    const { data: { user }, error: authError } = await supabaseClient.auth.getUser();
+    // Verify user JWT
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader) {
+      return new Response(JSON.stringify({ error: 'Missing authorization header' }), {
+        status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    const token = authHeader.replace('Bearer ', '');
+    const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
+    
     if (authError || !user) {
       return new Response(JSON.stringify({ error: 'Unauthorized' }), {
         status: 401,
@@ -36,7 +47,7 @@ Deno.serve(async (req) => {
     }
 
     // Get product details
-    const { data: product, error: productError } = await supabaseClient
+    const { data: product, error: productError } = await supabaseAdmin
       .from('products')
       .select('*')
       .eq('id', productId)
@@ -48,7 +59,7 @@ Deno.serve(async (req) => {
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
-    const { data: priceHistory, error: historyError } = await supabaseClient
+    const { data: priceHistory, error: historyError } = await supabaseAdmin
       .from('price_snapshots')
       .select('*')
       .eq('product_id', productId)
@@ -58,7 +69,7 @@ Deno.serve(async (req) => {
     if (historyError) throw historyError;
 
     // Get user's tracker for this product
-    const { data: tracker } = await supabaseClient
+    const { data: tracker } = await supabaseAdmin
       .from('trackers')
       .select('*')
       .eq('user_id', user.id)
