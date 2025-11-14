@@ -81,8 +81,7 @@ Deno.serve(async (req) => {
           productData = await scrapeAjio(url);
           break;
         default:
-          // For unsupported platforms, return mock data
-          productData = await getMockProductData(url, platform);
+          throw new Error(`Unsupported platform: ${platform}`);
       }
 
       // Update product with scraped data
@@ -187,7 +186,7 @@ async function scrapeAmazon(url: string) {
     return { name, price, imageUrl, isAvailable };
   } catch (error) {
     console.error('Error scraping Amazon:', error);
-    return getMockProductData(url, 'Amazon');
+    throw new Error(`Failed to scrape Amazon: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 }
 
@@ -225,7 +224,7 @@ async function scrapeFlipkart(url: string) {
     return { name, price, imageUrl, isAvailable };
   } catch (error) {
     console.error('Error scraping Flipkart:', error);
-    return getMockProductData(url, 'Flipkart');
+    throw new Error(`Failed to scrape Flipkart: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 }
 
@@ -286,7 +285,7 @@ async function scrapeMyntra(url: string) {
     };
   } catch (error) {
     console.error('Error scraping Myntra:', error);
-    return getMockProductData(url, 'Myntra');
+    throw new Error(`Failed to scrape Myntra: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 }
 
@@ -318,51 +317,44 @@ async function scrapeAjio(url: string) {
     };
   } catch (error) {
     console.error('Error scraping Ajio:', error);
-    return getMockProductData(url, 'Ajio');
+    throw new Error(`Failed to scrape Ajio: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 }
 
-async function getMockProductData(url: string, platform: string) {
-  // Extract product name from URL
-  const urlParts = url.split('/');
-  const productSlug = urlParts[urlParts.length - 1] || urlParts[urlParts.length - 2];
-  const name = productSlug
-    .replace(/[?#].*$/, '')
-    .replace(/[-_]/g, ' ')
-    .replace(/\b\w/g, (l) => l.toUpperCase())
-    .substring(0, 100);
-
-  return {
-    name: name || `Product from ${platform}`,
-    price: Math.floor(Math.random() * 5000) + 1000,
-    imageUrl: 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=500&h=500&fit=crop',
-    isAvailable: Math.random() > 0.1, // 90% availability
-  };
-}
-
 async function checkPriceAlerts(supabaseClient: any, productId: string, newPrice: number) {
-  // Get all active trackers for this product
+  console.log(`Checking price alerts for product ${productId} at price ${newPrice}`);
+  
   const { data: trackers, error } = await supabaseClient
     .from('trackers')
-    .select('*')
+    .select('id, user_id, target_price')
     .eq('product_id', productId)
-    .eq('is_active', true);
+    .eq('is_active', true)
+    .not('target_price', 'is', null);
 
-  if (error || !trackers) return;
+  if (error) {
+    console.error('Error fetching trackers:', error);
+    return;
+  }
 
-  for (const tracker of trackers) {
-    // Check if price is below target
-    if (tracker.target_price && newPrice <= tracker.target_price) {
-      // Create alert
-      await supabaseClient.from('alerts').insert({
-        user_id: tracker.user_id,
-        tracker_id: tracker.id,
-        old_price: tracker.target_price,
-        new_price: newPrice,
-        status: 'PENDING',
-      });
+  for (const tracker of trackers || []) {
+    if (newPrice <= tracker.target_price) {
+      console.log(`Price alert condition met for tracker ${tracker.id}`);
+      
+      const { error: alertError } = await supabaseClient
+        .from('alerts')
+        .insert({
+          user_id: tracker.user_id,
+          tracker_id: tracker.id,
+          old_price: tracker.target_price,
+          new_price: newPrice,
+          status: 'PENDING',
+        });
 
-      console.log(`Price alert created for tracker ${tracker.id}`);
+      if (alertError) {
+        console.error('Error creating alert:', alertError);
+      } else {
+        console.log(`Created alert for tracker ${tracker.id}`);
+      }
     }
   }
 }

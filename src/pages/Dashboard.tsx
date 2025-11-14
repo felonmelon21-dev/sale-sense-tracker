@@ -50,13 +50,13 @@ const Dashboard = () => {
   return (
     <div className="min-h-screen bg-background">
       {/* Navigation */}
-      <nav className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-50">
+      <nav className="border-b bg-card sticky top-0 z-50">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
           <Link to="/" className="flex items-center gap-2">
-            <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-primary to-accent flex items-center justify-center">
-              <TrendingDown className="h-5 w-5 text-white" />
+            <div className="h-8 w-8 rounded-lg bg-primary/10 flex items-center justify-center">
+              <TrendingDown className="h-5 w-5 text-primary" />
             </div>
-            <span className="text-xl font-bold text-foreground">Saleor</span>
+            <span className="text-xl font-semibold text-foreground">Saleor</span>
           </Link>
           <div className="flex items-center gap-4">
             <Button variant="ghost" size="icon">
@@ -66,7 +66,7 @@ const Dashboard = () => {
               <LogOut className="h-5 w-5" />
             </Button>
             <Link to="/add-tracker">
-              <Button className="bg-primary hover:bg-primary/90">
+              <Button>
                 <Plus className="h-4 w-4 mr-2" />
                 Add Product
               </Button>
@@ -78,9 +78,9 @@ const Dashboard = () => {
       <div className="container mx-auto px-4 py-8">
         {/* Header */}
         <div className="mb-8">
-          <h1 className="text-4xl font-bold mb-2">Your Price Trackers</h1>
+          <h1 className="text-3xl font-bold mb-2">Your Price Trackers</h1>
           <p className="text-muted-foreground">
-            {isLoading ? "Loading..." : `Monitoring ${trackers.length} products across multiple platforms`}
+            {isLoading ? "Loading..." : `Monitoring ${trackers.length} products`}
           </p>
         </div>
 
@@ -99,7 +99,7 @@ const Dashboard = () => {
 
         {/* Stats Cards */}
         <div className="grid md:grid-cols-3 gap-4 mb-8">
-          <Card className="border-primary/20">
+          <Card>
             <CardHeader className="pb-3">
               <CardDescription>Total Potential Savings</CardDescription>
               <CardTitle className="text-3xl text-success">
@@ -107,16 +107,16 @@ const Dashboard = () => {
               </CardTitle>
             </CardHeader>
           </Card>
-          <Card className="border-primary/20">
+          <Card>
             <CardHeader className="pb-3">
               <CardDescription>Active Alerts</CardDescription>
-              <CardTitle className="text-3xl text-accent">{activeAlerts}</CardTitle>
+              <CardTitle className="text-3xl text-primary">{activeAlerts}</CardTitle>
             </CardHeader>
           </Card>
-          <Card className="border-primary/20">
+          <Card>
             <CardHeader className="pb-3">
               <CardDescription>Tracked Products</CardDescription>
-              <CardTitle className="text-3xl text-primary">{trackers.length}</CardTitle>
+              <CardTitle className="text-3xl">{trackers.length}</CardTitle>
             </CardHeader>
           </Card>
         </div>
