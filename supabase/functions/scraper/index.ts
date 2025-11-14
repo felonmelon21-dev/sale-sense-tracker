@@ -155,33 +155,99 @@ async function scrapeAmazon(url: string) {
   try {
     const response = await fetch(url, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.9',
+        'Accept-Language': 'en-IN,en-GB;q=0.9,en-US;q=0.8,en;q=0.7',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'Cache-Control': 'no-cache',
+        'Pragma': 'no-cache',
       },
     });
 
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+
     const html = await response.text();
+    console.log('Amazon HTML length:', html.length);
     
-    // Parse product name
-    const nameMatch = html.match(/<span id="productTitle"[^>]*>([^<]+)<\/span>/i) ||
-                     html.match(/<h1[^>]*class="[^"]*product-title[^"]*"[^>]*>([^<]+)<\/h1>/i);
-    const name = nameMatch ? nameMatch[1].trim() : extractNameFromUrl(url);
+    // Try JSON-LD structured data first
+    let name = extractNameFromUrl(url);
+    let price: number | null = null;
+    let imageUrl = 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=500&h=500&fit=crop';
+    
+    const jsonLdMatch = html.match(/<script[^>]*type=["']application\/ld\+json["'][^>]*>(.*?)<\/script>/is);
+    if (jsonLdMatch) {
+      try {
+        const jsonData = JSON.parse(jsonLdMatch[1]);
+        if (jsonData.name) name = jsonData.name;
+        if (jsonData.offers?.price) price = parseFloat(String(jsonData.offers.price));
+        if (jsonData.image) imageUrl = Array.isArray(jsonData.image) ? jsonData.image[0] : jsonData.image;
+      } catch (e) {
+        console.log('Failed to parse JSON-LD:', e);
+      }
+    }
+    
+    // Fallback: Parse product name from multiple selectors
+    if (!name || name === extractNameFromUrl(url)) {
+      const namePatterns = [
+        /<span id="productTitle"[^>]*>\s*([^<]+?)\s*<\/span>/i,
+        /<h1[^>]*id="title"[^>]*>\s*([^<]+?)\s*<\/h1>/i,
+        /<h1[^>]*class="[^"]*product[^"]*title[^"]*"[^>]*>\s*([^<]+?)\s*<\/h1>/i,
+      ];
+      for (const pattern of namePatterns) {
+        const match = html.match(pattern);
+        if (match) {
+          name = match[1].trim();
+          break;
+        }
+      }
+    }
 
-    // Parse price - try multiple selectors
-    const priceMatch = html.match(/₹[\s]*([0-9,]+(?:\.[0-9]{2})?)/i) ||
-                      html.match(/<span[^>]*class="[^"]*price[^"]*"[^>]*>₹?[\s]*([0-9,]+(?:\.[0-9]{2})?)<\/span>/i);
-    const priceStr = priceMatch ? priceMatch[1].replace(/,/g, '') : null;
-    const price = priceStr ? parseFloat(priceStr) : Math.floor(Math.random() * 5000) + 1000;
+    // Fallback: Parse price from multiple selectors
+    if (!price) {
+      const pricePatterns = [
+        /<span[^>]*class="[^"]*a-price-whole[^"]*"[^>]*>([0-9,]+)/i,
+        /<span[^>]*class="[^"]*a-offscreen[^"]*"[^>]*>₹[\s]*([0-9,]+(?:\.[0-9]{2})?)/i,
+        /₹\s*([0-9,]+(?:\.[0-9]{2})?)/i,
+      ];
+      for (const pattern of pricePatterns) {
+        const match = html.match(pattern);
+        if (match) {
+          const priceStr = match[1].replace(/,/g, '');
+          price = parseFloat(priceStr);
+          if (!isNaN(price) && price > 0) break;
+          price = null;
+        }
+      }
+    }
 
-    // Parse image
-    const imageMatch = html.match(/<img[^>]*id="landingImage"[^>]*src="([^"]+)"/i) ||
-                      html.match(/<img[^>]*class="[^"]*product-image[^"]*"[^>]*src="([^"]+)"/i);
-    const imageUrl = imageMatch ? imageMatch[1] : 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=500&h=500&fit=crop';
+    // Fallback: Parse image from multiple selectors
+    if (imageUrl === 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=500&h=500&fit=crop') {
+      const imagePatterns = [
+        /<img[^>]*id="landingImage"[^>]*data-old-hires="([^"]+)"/i,
+        /<img[^>]*id="landingImage"[^>]*src="([^"]+)"/i,
+        /<img[^>]*class="[^"]*a-dynamic-image[^"]*"[^>]*src="([^"]+)"/i,
+      ];
+      for (const pattern of imagePatterns) {
+        const match = html.match(pattern);
+        if (match && match[1] && !match[1].includes('data:image')) {
+          imageUrl = match[1];
+          break;
+        }
+      }
+    }
 
     // Check availability
     const isAvailable = !html.includes('Currently unavailable') && 
-                       !html.includes('Out of stock');
+                       !html.includes('Out of stock') &&
+                       !html.includes('Temporarily out of stock');
+
+    if (!price) {
+      throw new Error('Could not extract price from Amazon page');
+    }
+
+    console.log('Amazon scraped:', { name: name.substring(0, 50), price, hasImage: imageUrl !== 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=500&h=500&fit=crop' });
 
     return { name, price, imageUrl, isAvailable };
   } catch (error) {
@@ -196,30 +262,97 @@ async function scrapeFlipkart(url: string) {
   try {
     const response = await fetch(url, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'en-IN,en-GB;q=0.9,en-US;q=0.8,en;q=0.7',
       },
     });
 
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+
     const html = await response.text();
+    console.log('Flipkart HTML length:', html.length);
     
-    // Parse product name
-    const nameMatch = html.match(/<span[^>]*class="[^"]*B_NuCI[^"]*"[^>]*>([^<]+)<\/span>/i) ||
-                     html.match(/<h1[^>]*class="[^"]*yhB1nd[^"]*"[^>]*>([^<]+)<\/h1>/i);
-    const name = nameMatch ? nameMatch[1].trim() : extractNameFromUrl(url);
+    let name = extractNameFromUrl(url);
+    let price: number | null = null;
+    let imageUrl = 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=500&h=500&fit=crop';
 
-    // Parse price
-    const priceMatch = html.match(/₹([0-9,]+)/i);
-    const priceStr = priceMatch ? priceMatch[1].replace(/,/g, '') : null;
-    const price = priceStr ? parseFloat(priceStr) : Math.floor(Math.random() * 5000) + 1000;
+    // Try JSON-LD structured data first
+    const jsonLdMatch = html.match(/<script[^>]*type=["']application\/ld\+json["'][^>]*>(.*?)<\/script>/is);
+    if (jsonLdMatch) {
+      try {
+        const jsonData = JSON.parse(jsonLdMatch[1]);
+        if (jsonData.name) name = jsonData.name;
+        if (jsonData.offers?.price) price = parseFloat(String(jsonData.offers.price));
+        if (jsonData.image) imageUrl = Array.isArray(jsonData.image) ? jsonData.image[0] : jsonData.image;
+      } catch (e) {
+        console.log('Failed to parse JSON-LD:', e);
+      }
+    }
+    
+    // Parse product name from multiple selectors
+    if (!name || name === extractNameFromUrl(url)) {
+      const namePatterns = [
+        /<span[^>]*class="[^"]*VU-ZEz[^"]*"[^>]*>([^<]+)<\/span>/i,
+        /<span[^>]*class="[^"]*B_NuCI[^"]*"[^>]*>([^<]+)<\/span>/i,
+        /<h1[^>]*class="[^"]*yhB1nd[^"]*"[^>]*>([^<]+)<\/h1>/i,
+        /<h1[^>]*>\s*<span[^>]*>([^<]+)<\/span>/i,
+      ];
+      for (const pattern of namePatterns) {
+        const match = html.match(pattern);
+        if (match) {
+          name = match[1].trim();
+          break;
+        }
+      }
+    }
 
-    // Parse image
-    const imageMatch = html.match(/<img[^>]*class="[^"]*_396cs4[^"]*"[^>]*src="([^"]+)"/i);
-    const imageUrl = imageMatch ? imageMatch[1] : 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=500&h=500&fit=crop';
+    // Parse price from multiple selectors
+    if (!price) {
+      const pricePatterns = [
+        /<div[^>]*class="[^"]*Nx9bqj[^"]*CxhGGd[^"]*"[^>]*>₹([0-9,]+)/i,
+        /<div[^>]*class="[^"]*_30jeq3[^"]*"[^>]*>₹([0-9,]+)/i,
+        /₹\s*([0-9,]+(?:\.[0-9]{2})?)/i,
+      ];
+      for (const pattern of pricePatterns) {
+        const match = html.match(pattern);
+        if (match) {
+          const priceStr = match[1].replace(/,/g, '');
+          price = parseFloat(priceStr);
+          if (!isNaN(price) && price > 0) break;
+          price = null;
+        }
+      }
+    }
+
+    // Parse image from multiple selectors
+    if (imageUrl === 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=500&h=500&fit=crop') {
+      const imagePatterns = [
+        /<img[^>]*class="[^"]*_396cs4[^"]*"[^>]*src="([^"]+)"/i,
+        /<img[^>]*class="[^"]*_2r_T1I[^"]*"[^>]*src="([^"]+)"/i,
+        /<img[^>]*class="[^"]*_53J4C-[^"]*"[^>]*src="([^"]+)"/i,
+      ];
+      for (const pattern of imagePatterns) {
+        const match = html.match(pattern);
+        if (match && match[1] && !match[1].includes('data:image')) {
+          imageUrl = match[1].replace(/\{@@width@@\}/g, '500').replace(/\{@@height@@\}/g, '500');
+          break;
+        }
+      }
+    }
 
     // Check availability
     const isAvailable = !html.includes('Sold Out') && 
-                       !html.includes('Out of Stock');
+                       !html.includes('Out of Stock') &&
+                       !html.includes('Currently unavailable');
+
+    if (!price) {
+      throw new Error('Could not extract price from Flipkart page');
+    }
+
+    console.log('Flipkart scraped:', { name: name.substring(0, 50), price, hasImage: imageUrl !== 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=500&h=500&fit=crop' });
 
     return { name, price, imageUrl, isAvailable };
   } catch (error) {
@@ -244,45 +377,95 @@ async function scrapeMyntra(url: string) {
   try {
     const response = await fetch(url, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-IN,en-GB;q=0.9,en-US;q=0.8,en;q=0.7',
       },
     });
 
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+
     const html = await response.text();
+    console.log('Myntra HTML length:', html.length);
     
-    // Myntra often uses JSON-LD data
-    const jsonLdMatch = html.match(/<script type="application\/ld\+json">([^<]+)<\/script>/i);
+    let name = extractNameFromUrl(url);
+    let price: number | null = null;
+    let imageUrl = 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=500&h=500&fit=crop';
+    let isAvailable = true;
+    
+    // Try JSON-LD structured data first (Myntra often uses this)
+    const jsonLdMatch = html.match(/<script[^>]*type=["']application\/ld\+json["'][^>]*>(.*?)<\/script>/is);
     if (jsonLdMatch) {
       try {
         const jsonData = JSON.parse(jsonLdMatch[1]);
-        if (jsonData.name && jsonData.offers) {
-          return {
-            name: jsonData.name,
-            price: parseFloat(jsonData.offers.price),
-            imageUrl: jsonData.image || 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=500&h=500&fit=crop',
-            isAvailable: jsonData.offers.availability === 'http://schema.org/InStock',
-          };
+        if (jsonData.name) name = jsonData.name;
+        if (jsonData.offers?.price) price = parseFloat(String(jsonData.offers.price));
+        if (jsonData.image) imageUrl = Array.isArray(jsonData.image) ? jsonData.image[0] : jsonData.image;
+        if (jsonData.offers?.availability) {
+          isAvailable = jsonData.offers.availability === 'http://schema.org/InStock' || 
+                       jsonData.offers.availability === 'InStock';
         }
       } catch (e) {
-        console.error('Error parsing JSON-LD:', e);
+        console.log('Failed to parse JSON-LD:', e);
       }
     }
 
-    // Fallback to HTML parsing
-    const nameMatch = html.match(/<h1[^>]*class="[^"]*pdp-title[^"]*"[^>]*>([^<]+)<\/h1>/i);
-    const name = nameMatch ? nameMatch[1].trim() : extractNameFromUrl(url);
+    // Fallback: Parse from HTML
+    if (!name || name === extractNameFromUrl(url)) {
+      const namePatterns = [
+        /<h1[^>]*class="[^"]*pdp-title[^"]*"[^>]*>([^<]+)<\/h1>/i,
+        /<h1[^>]*class="[^"]*pdp-name[^"]*"[^>]*>([^<]+)<\/h1>/i,
+        /<h1[^>]*>\s*([^<]+?)\s*<\/h1>/i,
+      ];
+      for (const pattern of namePatterns) {
+        const match = html.match(pattern);
+        if (match) {
+          name = match[1].trim();
+          break;
+        }
+      }
+    }
 
-    const priceMatch = html.match(/₹[\s]*([0-9,]+)/i);
-    const priceStr = priceMatch ? priceMatch[1].replace(/,/g, '') : null;
-    const price = priceStr ? parseFloat(priceStr) : Math.floor(Math.random() * 3000) + 500;
+    if (!price) {
+      const pricePatterns = [
+        /<span[^>]*class="[^"]*pdp-price[^"]*"[^>]*>₹\s*([0-9,]+)/i,
+        /<strong[^>]*class="[^"]*pdp-price[^"]*"[^>]*>₹\s*([0-9,]+)/i,
+        /₹\s*([0-9,]+(?:\.[0-9]{2})?)/i,
+      ];
+      for (const pattern of pricePatterns) {
+        const match = html.match(pattern);
+        if (match) {
+          const priceStr = match[1].replace(/,/g, '');
+          price = parseFloat(priceStr);
+          if (!isNaN(price) && price > 0) break;
+          price = null;
+        }
+      }
+    }
 
-    return { 
-      name, 
-      price, 
-      imageUrl: 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=500&h=500&fit=crop',
-      isAvailable: true 
-    };
+    if (imageUrl === 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=500&h=500&fit=crop') {
+      const imagePatterns = [
+        /<img[^>]*class="[^"]*image-grid-image[^"]*"[^>]*src="([^"]+)"/i,
+        /<img[^>]*class="[^"]*img-responsive[^"]*"[^>]*src="([^"]+)"/i,
+      ];
+      for (const pattern of imagePatterns) {
+        const match = html.match(pattern);
+        if (match && match[1] && !match[1].includes('data:image')) {
+          imageUrl = match[1];
+          break;
+        }
+      }
+    }
+
+    if (!price) {
+      throw new Error('Could not extract price from Myntra page');
+    }
+
+    console.log('Myntra scraped:', { name: name.substring(0, 50), price, hasImage: imageUrl !== 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=500&h=500&fit=crop' });
+
+    return { name, price, imageUrl, isAvailable };
   } catch (error) {
     console.error('Error scraping Myntra:', error);
     throw new Error(`Failed to scrape Myntra: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -295,26 +478,97 @@ async function scrapeAjio(url: string) {
   try {
     const response = await fetch(url, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-IN,en-GB;q=0.9,en-US;q=0.8,en;q=0.7',
       },
     });
 
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+
     const html = await response.text();
+    console.log('Ajio HTML length:', html.length);
     
-    const nameMatch = html.match(/<h1[^>]*>([^<]+)<\/h1>/i);
-    const name = nameMatch ? nameMatch[1].trim() : extractNameFromUrl(url);
+    let name = extractNameFromUrl(url);
+    let price: number | null = null;
+    let imageUrl = 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=500&h=500&fit=crop';
+    
+    // Try JSON-LD structured data first
+    const jsonLdMatch = html.match(/<script[^>]*type=["']application\/ld\+json["'][^>]*>(.*?)<\/script>/is);
+    if (jsonLdMatch) {
+      try {
+        const jsonData = JSON.parse(jsonLdMatch[1]);
+        if (jsonData.name) name = jsonData.name;
+        if (jsonData.offers?.price) price = parseFloat(String(jsonData.offers.price));
+        if (jsonData.image) imageUrl = Array.isArray(jsonData.image) ? jsonData.image[0] : jsonData.image;
+      } catch (e) {
+        console.log('Failed to parse JSON-LD:', e);
+      }
+    }
 
-    const priceMatch = html.match(/₹[\s]*([0-9,]+)/i);
-    const priceStr = priceMatch ? priceMatch[1].replace(/,/g, '') : null;
-    const price = priceStr ? parseFloat(priceStr) : Math.floor(Math.random() * 3000) + 500;
+    // Parse product name from HTML
+    if (!name || name === extractNameFromUrl(url)) {
+      const namePatterns = [
+        /<h1[^>]*class="[^"]*prod-name[^"]*"[^>]*>([^<]+)<\/h1>/i,
+        /<h1[^>]*>\s*([^<]+?)\s*<\/h1>/i,
+        /<span[^>]*class="[^"]*prod-name[^"]*"[^>]*>([^<]+)<\/span>/i,
+      ];
+      for (const pattern of namePatterns) {
+        const match = html.match(pattern);
+        if (match) {
+          name = match[1].trim();
+          break;
+        }
+      }
+    }
 
-    return { 
-      name, 
-      price, 
-      imageUrl: 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=500&h=500&fit=crop',
-      isAvailable: true 
-    };
+    // Parse price from HTML
+    if (!price) {
+      const pricePatterns = [
+        /<span[^>]*class="[^"]*prod-sp[^"]*"[^>]*>₹\s*([0-9,]+)/i,
+        /<div[^>]*class="[^"]*prod-price[^"]*"[^>]*>₹\s*([0-9,]+)/i,
+        /₹\s*([0-9,]+(?:\.[0-9]{2})?)/i,
+      ];
+      for (const pattern of pricePatterns) {
+        const match = html.match(pattern);
+        if (match) {
+          const priceStr = match[1].replace(/,/g, '');
+          price = parseFloat(priceStr);
+          if (!isNaN(price) && price > 0) break;
+          price = null;
+        }
+      }
+    }
+
+    // Parse image from HTML
+    if (imageUrl === 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=500&h=500&fit=crop') {
+      const imagePatterns = [
+        /<img[^>]*class="[^"]*img-[^"]*"[^>]*src="([^"]+)"/i,
+        /<img[^>]*src="([^"]+)"[^>]*class="[^"]*prod-img[^"]*"/i,
+      ];
+      for (const pattern of imagePatterns) {
+        const match = html.match(pattern);
+        if (match && match[1] && !match[1].includes('data:image')) {
+          imageUrl = match[1];
+          break;
+        }
+      }
+    }
+
+    // Check availability
+    const isAvailable = !html.includes('Out of stock') && 
+                       !html.includes('Currently unavailable') &&
+                       !html.includes('Sold out');
+
+    if (!price) {
+      throw new Error('Could not extract price from Ajio page');
+    }
+
+    console.log('Ajio scraped:', { name: name.substring(0, 50), price, hasImage: imageUrl !== 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=500&h=500&fit=crop' });
+
+    return { name, price, imageUrl, isAvailable };
   } catch (error) {
     console.error('Error scraping Ajio:', error);
     throw new Error(`Failed to scrape Ajio: ${error instanceof Error ? error.message : 'Unknown error'}`);
