@@ -56,6 +56,14 @@ const ProductDetail = () => {
 
   const { product, priceHistory, tracker, statistics } = productData;
 
+  console.log('Product data:', { 
+    product_name: product.name, 
+    product_price: product.latest_price,
+    product_image: product.image_url,
+    priceHistory_length: priceHistory.length,
+    tracker_id: tracker?.id 
+  });
+
   const chartData = priceHistory.map((snapshot) => ({
     date: new Date(snapshot.snapshot_at).toLocaleDateString('en-IN', { month: 'short', day: 'numeric' }),
     price: snapshot.price,
@@ -63,10 +71,16 @@ const ProductDetail = () => {
 
   const handleRemoveTracker = () => {
     if (tracker) {
+      console.log('Deleting tracker:', tracker.id);
       deleteTracker(tracker.id, {
         onSuccess: () => {
+          console.log('Tracker deleted successfully');
           toast.success("Tracker removed successfully");
           navigate("/dashboard");
+        },
+        onError: (error: any) => {
+          console.error('Delete error:', error);
+          toast.error(error.message || "Failed to remove tracker");
         },
       });
     }

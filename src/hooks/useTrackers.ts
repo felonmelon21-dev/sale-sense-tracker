@@ -67,11 +67,13 @@ export function useTrackers() {
 
   const deleteTracker = useMutation({
     mutationFn: async (trackerId: string) => {
-      const { error } = await supabase.functions.invoke(`trackers?id=${trackerId}`, {
+      const { data, error } = await supabase.functions.invoke('trackers', {
         method: 'DELETE',
+        body: { id: trackerId },
       });
 
       if (error) throw error;
+      return data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['trackers'] });
