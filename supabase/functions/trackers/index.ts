@@ -136,6 +136,18 @@ Deno.serve(async (req) => {
       if (existingProduct) {
         productId = existingProduct.id;
         console.log('Product already exists:', productId);
+        
+        // Re-scrape if product data looks incomplete
+        if (existingProduct.name === 'Product loading...' || existingProduct.latest_price === 0) {
+          console.log('Product data incomplete, re-triggering scraping');
+          const scrapeResult = await supabaseAdmin.functions.invoke('scraper', {
+            body: { productId, url: productUrl, platform },
+          });
+          
+          if (scrapeResult.error) {
+            console.error('Re-scraping failed:', scrapeResult.error);
+          }
+        }
       } else {
         // Create new product (scraping will happen in background)
         const { data: newProduct, error: productError } = await supabaseAdmin
@@ -153,10 +165,18 @@ Deno.serve(async (req) => {
         productId = newProduct.id;
         console.log('Created new product:', productId);
 
-        // Trigger scraping in background (fire and forget)
-        supabaseAdmin.functions.invoke('scraper', {
+        // Trigger scraping immediately and wait for it
+        console.log('Invoking scraper for product:', productId);
+        const scrapeResult = await supabaseAdmin.functions.invoke('scraper', {
           body: { productId, url: productUrl, platform },
-        }).catch((err) => console.error('Background scraping error:', err));
+        });
+        
+        if (scrapeResult.error) {
+          console.error('Scraping failed:', scrapeResult.error);
+          // Don't fail the tracker creation, just log the error
+        } else {
+          console.log('Scraping completed successfully');
+        }
       }
 
       // Check if tracker already exists
@@ -198,8 +218,7 @@ Deno.serve(async (req) => {
 
     // DELETE - Remove a tracker
     if (req.method === 'DELETE') {
-      const url = new URL(req.url);
-      const trackerId = url.searchParams.get('id');
+      const { id: trackerId } = await req.json();
 
       if (!trackerId) {
         return new Response(JSON.stringify({ error: 'Tracker ID required' }), {
@@ -208,13 +227,20 @@ Deno.serve(async (req) => {
         });
       }
 
+      console.log('Deleting tracker:', trackerId, 'for user:', user.id);
+
       const { error } = await supabaseAdmin
         .from('trackers')
         .delete()
         .eq('id', trackerId)
         .eq('user_id', user.id);
 
-      if (error) throw error;
+      if (error) {
+        console.error('Delete error:', error);
+        throw error;
+      }
+
+      console.log('Tracker deleted successfully');
 
       return new Response(JSON.stringify({ success: true }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },

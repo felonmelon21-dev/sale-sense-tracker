@@ -14,6 +14,12 @@ const Dashboard = () => {
   const { trackers, isLoading, deleteTracker } = useTrackers();
   const [searchQuery, setSearchQuery] = useState("");
 
+  console.log('Dashboard trackers:', trackers.length, trackers.map(t => ({
+    name: t.products.name,
+    price: t.products.latest_price,
+    image: t.products.image_url
+  })));
+
   useEffect(() => {
     if (!authLoading && !user) {
       navigate("/auth");
@@ -140,11 +146,15 @@ const Dashboard = () => {
                   </div>
                   <CardHeader className="pb-3">
                     <CardTitle className="line-clamp-2 text-lg">{tracker.products.name}</CardTitle>
-                    <CardDescription className="flex items-center gap-2">
+                    <CardDescription className="flex items-center gap-2 flex-wrap">
                       <Badge variant="secondary" className="text-xs">
                         {tracker.products.platform}
                       </Badge>
-                      {tracker.products.is_available ? (
+                      {tracker.products.name === 'Product loading...' || tracker.products.latest_price === 0 ? (
+                        <Badge variant="outline" className="text-xs">
+                          Loading data...
+                        </Badge>
+                      ) : tracker.products.is_available ? (
                         <Badge variant="default" className="text-xs bg-success">In Stock</Badge>
                       ) : (
                         <Badge variant="destructive" className="text-xs">Out of Stock</Badge>

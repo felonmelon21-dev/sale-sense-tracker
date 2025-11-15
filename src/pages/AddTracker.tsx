@@ -32,6 +32,9 @@ const AddTracker = () => {
       },
       {
         onSuccess: () => {
+          toast.success("Tracker added! Fetching product details...", {
+            description: "This may take a few seconds. Check the dashboard for updates."
+          });
           navigate("/dashboard");
         },
       }
